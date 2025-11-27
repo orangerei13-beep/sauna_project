@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIサウナ診断＆体験共有</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background-color: oklab(35.264% 0.03 0.06888 / 0.65); color: #352e2e; margin: 0; padding: 20px;cursor: url("static/hishaku-3.png"),auto; }
+        .main-wrapper { max-width: 600px; margin: 0 auto; }
+        .card { background: rgb(80, 77, 73); padding: 20px 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(252, 252, 252, 0.1); margin-bottom: 30px; }
+        h1, h2, h3 { color: #ffffff; text-align: center; }
+        h1 { margin-top: 10px; }
+        .question { display: none; }
+        .question.active { display: block; text-align: center; }
+        /* ★★★ 修正箇所: 質問文の色を白に変更 ★★★ */
+        .question p { font-size: 1.2em; font-weight: bold; margin-bottom: 20px; color: #ffffff; } 
+        .options button { width: 100%; padding: 15px; margin-bottom: 10px; background: #392204; color: white; border: none; border-radius: 8px; cursor: inherit; font-size: 1em; }
+        .options button:hover { background: #e8b466cb; }
+        #result-display.active { display: block; }
+        /* ノートのスケッチ風の結果表示 */
+        .sauna-card { display: flex; gap: 15px; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .sauna-card img { width: 100px; height: 100px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+        .sauna-card-content { flex-grow: 1; }
+        .sauna-card-content h3 { text-align: left; margin: 0 0 5px 0; }
+        .sauna-card-content p { margin: 0; }
+        .sauna-location { font-size: 0.9em; color: #ffffff; }
+        .sauna-recommend { font-size: 0.9em; color: #f9f9f9; margin-top: 8px; }
+        .form-group { margin-bottom: 15px; }
+        input, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; margin-top: 5px; }
+        textarea { height: 80px; }
+        .post-btn { background: #ff9800; color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; cursor: inherit; font-weight: bold; }
+        .post-item { border-bottom: 1px solid #eee; padding: 15px 0; }
+        
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="card">
+            <h1>:温泉: AIサウナ診断</h1>
+            <div id="quiz">
+                <div id="q1" class="question active">
+                    <p>Q1. 好みのサウナの温度は？</p>
+                    <div class="options">
+                        <button onclick="answer('sauna_temp', '高い')">高い (アツアツ)</button>
+                        <button onclick="answer('sauna_temp', '普通')">普通 (じっくり)</button>
+                        <button onclick="answer('sauna_temp', '低い')">低い (マイルド)</button>
+                    </div>
+                </div>
+                <div id="q2" class="question">
+                    <p>Q2. 好みの水風呂の温度は？</p>
+                    <div class="options">
+                        <button onclick="answer('water_temp', '高い ぬるめ')">高い (ぬるめ)</button>
+                        <button onclick="answer('water_temp', '普通')">普通 (ちょうどいい)</button>
+                        <button onclick="answer('water_temp', '低い つめたい')">低い (キンキン)</button>
+                    </div>
+                </div>
+                <div id="q3" class="question">
+                    <p>Q3. どんなスッキリ感を求めてる？</p>
+                    <div class="options">
+                        <button onclick="answer('refresh_type', '身体')">身体スッキリ</button>
+                        <button onclick="answer('refresh_type', '心')">心ととのう</button>
+                        <button onclick="answer('refresh_type', '感覚的')">五感を刺激</button>
+                    </div>
+                </div>
+            </div>
+            <div id="result-display" class="result">
+                <h2>あなたにピッタリなサウナは...</h2>
+                <div id="sauna-recommendations"></div>
+                <button class="options button" style="background:#3a3939; width:100%; padding:10px; border:none; border-radius:8px; color:white; margin-top: 15px;" onclick="location.reload()">もう一度診断する</button>
+            </div>
+        </div>
+        <div class="card">
+            <h2>:サウナ_男性: みんなの体験記</h2>
+            <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div class="form-group"><label>お名前</label><input type="text" id="post-name" placeholder="サウナー太郎"></div>
+                <div class="form-group"><label>行った施設名</label><input type="text" id="post-sauna" placeholder="〇〇温泉"></div>
+                <div class="form-group"><label>感想・楽しみ方</label><textarea id="post-content" placeholder="水風呂が最高でした！サウナ後はオロポがおすすめ。"></textarea></div>
+                <button class="post-btn" onclick="submitPost()">投稿する</button>
+            </div>
+            <div id="posts-container"><p style="text-align:center; color:#999;">読み込み中...</p></div>
+        </div>
+    </div>
+    <script>
+        // --- 診断機能のJS ---
+        let currentQuestion = 1;
+        const userAnswers = {}; // ユーザーの回答を保存する
+        const API_URL = 'http://127.0.0.1:5000';
+        // 【更新】回答を保存し、次の質問へ
+        function answer(key, value) {
+            userAnswers[key] = value; // 回答を保存
+            document.getElementById(`q${currentQuestion}`).classList.remove('active');
+            currentQuestion++;
+            if (currentQuestion > 3) {
+                // 3問終わったら結果表示
+                showResult();
+            } else {
+                // 次の質問を表示
+                document.getElementById(`q${currentQuestion}`).classList.add('active');
+            }
+        }
+        // 【更新】AIに診断をリクエスト
+        async function showResult() {
+            document.getElementById('quiz').style.display = 'none';
+            document.getElementById('result-display').classList.add('active');
+            const recEl = document.getElementById('sauna-recommendations');
+            recEl.innerHTML = '<p style="text-align:center;">:脳: AIが分析中...</p>';
+            try {
+                const res = await fetch(`${API_URL}/recommend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // 3つの回答をまとめて送信
+                    body: JSON.stringify(userAnswers)
+                });
+                const data = await res.json();
+                recEl.innerHTML = '';
+                // 【更新】ノートのスケッチ風に結果を表示
+                data.slice(0, 3).forEach(s => {
+                    recEl.innerHTML += `
+                        <div class="sauna-card">
+                            <img src="https://placehold.jp/150/008080/ffffff/100x100.png?text=サウナ" alt="サウナ画像">
+                            <div class="sauna-card-content">
+                                <h3>${s['施設名']}</h3>
+                                <p class="sauna-location">:丸い画鋲: ${s['場所']}</p>
+                                <p class="sauna-recommend">:電球: ${s['初心者におすすめのポイント']}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (e) { recEl.innerHTML = '<p>エラーが発生しました</p>'; }
+        }
+        // --- 掲示板機能のJS (修正済み) ---
+        window.onload = loadPosts;
+        async function loadPosts() {
+            try {
+                const res = await fetch(`${API_URL}/posts`);
+                const posts = await res.json();
+                const container = document.getElementById('posts-container');
+                container.innerHTML = '';
+                if(posts.length === 0) {
+                    container.innerHTML = '<p style="text-align:center; color:#999;">まだ投稿はありません。</p>'; return;
+                }
+                posts.forEach(post => {
+                    container.innerHTML += `
+                        <div class="post-item">
+                            <div style="display:flex; justify-content:space-between; font-size:0.85em; color:#ffcc00; margin-bottom:5px;">
+                                <span>:上半身シルエット_1: ${escapeHTML(post.name)}</span><span>${escapeHTML(post.date)}</span>
+                            </div>
+                            <div style="font-weight:bold; color:#ffffff;">:温泉: ${escapeHTML(post.sauna)}</div>
+                            <div style="line-height:1.5; color:#ff9800;">${escapeHTML(post.content)}</div>
+                        </div>`;
+                });
+            } catch (e) { console.error(e); }
+        }
+        async function submitPost() {
+            const name = document.getElementById('post-name').value;
+            const sauna = document.getElementById('post-sauna').value;
+            const content = document.getElementById('post-content').value;
+            if(!name || !content) { alert('名前と感想を入力してください！'); return; }
+            try {
+                await fetch(`${API_URL}/posts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, sauna, content })
+                });
+                document.getElementById('post-name').value = '';
+                document.getElementById('post-sauna').value = '';
+                document.getElementById('post-content').value = '';
+                loadPosts();
+            } catch (e) { alert('投稿に失敗しました'); }
+        }
+        function escapeHTML(str) {
+            return str.replace(/[&<>"']/g, function(match) {
+                return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[match];
+            });
+        }
+    </script>
+</body>
+</html>
